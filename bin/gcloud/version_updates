@@ -33,8 +33,7 @@ else
 	echo "Neo4j version is same !!"
   exit 1
 fi
+#
+#git commit -m "Updating version to ${NEO4J_VERSION}"
+#git push
 
-git commit -m "Updating version to ${NEO4J_VERSION}"
-git push
-git tag -m "Tagging ${NEO4J_VERSION}" -a ${NEO4J_VERSION}
-git push --tags
