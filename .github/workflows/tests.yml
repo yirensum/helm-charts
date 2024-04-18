@@ -529,8 +529,8 @@ jobs:
 
       - name: Version Updates
         run: |          
-          git config --global user.email harshit.singhvi@neo4j.com
-          git config --global user.name "Harshit Singhvi"
+          git config --global user.email team-smcs@neo4j.com
+          git config --global user.name "team-smcs"
           ./bin/gcloud/version_updates
 
       - name: GPG Key Signing

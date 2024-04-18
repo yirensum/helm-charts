@@ -70,9 +70,6 @@ func clusterTests(clusterRelease model.ReleaseName) ([]SubTest, error) {
 			t.Parallel()
 			assert.NoError(t, InstallNeo4jBackupAWSHelmChartWithNodeSelector(t, clusterRelease), "Backup to AWS should succeed")
 		}},
-		{name: "Install Backup Helm Chart For GCP With Workload Identity For Cluster", test: func(t *testing.T) {
-			assert.NoError(t, InstallNeo4jBackupGCPHelmChartWithWorkloadIdentityForCluster(t, clusterRelease), "Backup to GCP with workload identity should succeed")
-		}},
 		{name: "Install Backup Helm Chart For AWS Using MinIO", test: func(t *testing.T) {
 			t.Parallel()
 			assert.NoError(t, InstallNeo4jBackupAWSHelmChartViaMinIO(t, clusterRelease), "Backup to AWS using MinIO should succeed")
@@ -103,6 +100,9 @@ func clusterTests(clusterRelease model.ReleaseName) ([]SubTest, error) {
 		}},
 		{name: "Database Creation Tests", test: func(t *testing.T) {
 			assert.NoError(t, databaseCreationTests(t, clusterRelease, "customers"), "Creates \"customer\" database and checks for its existence")
+		}},
+		{name: "Install Backup Helm Chart For GCP With Workload Identity For Cluster", test: func(t *testing.T) {
+			assert.NoError(t, InstallNeo4jBackupGCPHelmChartWithWorkloadIdentityForCluster(t, clusterRelease), "Backup to GCP with workload identity should succeed")
 		}},
 	}
 	return subTests, nil
