@@ -41,9 +41,10 @@ func TestInstallNeo4jClusterInGcloud(t *testing.T) {
 	core1HelmArgs := append(defaultHelmArgs, model.ImagePullSecretArgs...)
 	core1HelmArgs = append(core1HelmArgs, model.NodeSelectorArgs(namespace)...)
 	core2HelmArgs := append(defaultHelmArgs, model.PriorityClassNameArgs(namespace)...)
+	core3HelmArgs := append(defaultHelmArgs, model.EnableServerArgs()...)
 	core1 := clusterCore{model.NewCoreReleaseName(clusterReleaseName, 1), core1HelmArgs}
 	core2 := clusterCore{model.NewCoreReleaseName(clusterReleaseName, 2), core2HelmArgs}
-	core3 := clusterCore{model.NewCoreReleaseName(clusterReleaseName, 3), defaultHelmArgs}
+	core3 := clusterCore{model.NewCoreReleaseName(clusterReleaseName, 3), core3HelmArgs}
 	cores := []clusterCore{core1, core2, core3}
 
 	t.Cleanup(clusterTestCleanup(t, clusterReleaseName, core1, core2, core3, true))
