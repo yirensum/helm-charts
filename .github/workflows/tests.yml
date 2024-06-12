@@ -503,7 +503,7 @@ jobs:
         with:
           context: "{{defaultContext}}:neo4j/neo4j-operations"
           push: true
-          tags: "neo4j/neo4j-operations:${{ inputs.NEO4J_VERSION }}"
+          tags: "neo4j/helm-charts-operations:${{ inputs.NEO4J_VERSION }}"
           provenance: false
 
       - name: Build and push backup image
@@ -535,6 +535,7 @@ jobs:
       - run-community-tests-redhat
       - run-enterprise-tests
       - run-enterprise-tests-redhat
+      - build-reverseproxy-backup-release-image
     runs-on: ubuntu-latest
     if: ${{ inputs.RELEASE && github.ref_name == 'dev' && success() && github.event_name == 'workflow_dispatch' && (github.actor == 'harshitsinghvi22' || github.actor == 'bfeshti ') }}
     env:
