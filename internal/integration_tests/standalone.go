@@ -12,6 +12,11 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	. "github.com/neo4j/helm-charts/internal/helpers"
 	"github.com/neo4j/helm-charts/internal/integration_tests/gcloud"
 	"github.com/neo4j/helm-charts/internal/model"
@@ -648,6 +653,7 @@ func InstallNeo4jBackupAWSHelmChart(t *testing.T, standaloneReleaseName model.Re
 		return nil
 	}
 	backupReleaseName := model.NewReleaseName("standalone-backup-aws-" + TestRunIdentifier)
+	backupBucketName := fmt.Sprintf("helm-charts-%s", TestRunIdentifier)
 	namespace := string(standaloneReleaseName.Namespace())
 
 	t.Cleanup(func() {
@@ -656,11 +662,15 @@ func InstallNeo4jBackupAWSHelmChart(t *testing.T, standaloneReleaseName model.Re
 		}, false)
 	})
 
-	bucketName := model.BucketName
+	err := createAWSBucket(os.Getenv("AWS_ACCESS_KEY_ID"), os.Getenv("AWS_SECRET_ACCESS_KEY"), "us-east-1", backupBucketName)
+	if err != nil {
+		return err
+	}
+
 	helmClient := model.NewHelmClient(model.DefaultNeo4jBackupChartName)
 	helmValues := model.DefaultNeo4jBackupValues
 	helmValues.Backup = model.Backup{
-		BucketName:               bucketName,
+		BucketName:               backupBucketName,
 		DatabaseAdminServiceName: fmt.Sprintf("%s-admin", standaloneReleaseName.String()),
 		DatabaseNamespace:        string(standaloneReleaseName.Namespace()),
 		Database:                 "neo4j,system",
@@ -668,10 +678,11 @@ func InstallNeo4jBackupAWSHelmChart(t *testing.T, standaloneReleaseName model.Re
 		SecretName:               "awscred",
 		SecretKeyName:            "credentials",
 		Verbose:                  true,
+		KeepBackupFiles:          true,
 		Type:                     "FULL",
 	}
 	helmValues.ConsistencyCheck.Database = "neo4j"
-	_, err := helmClient.Install(t, backupReleaseName.String(), namespace, helmValues)
+	_, err = helmClient.Install(t, backupReleaseName.String(), namespace, helmValues)
 	assert.NoError(t, err)
 
 	time.Sleep(2 * time.Minute)
@@ -697,6 +708,50 @@ func InstallNeo4jBackupAWSHelmChart(t *testing.T, standaloneReleaseName model.Re
 		}
 	}
 	assert.Equal(t, true, found, "no aws backup pod found")
+
+	aggregateBackupReleaseName := model.NewReleaseName("standalone-aggregate-aws-" + TestRunIdentifier)
+	helmValues.Backup = model.Backup{
+		CloudProvider: "aws",
+		SecretName:    "awscred",
+		SecretKeyName: "credentials",
+		AggregateBackup: model.AggregateBackup{
+			Enabled:  true,
+			Verbose:  true,
+			FromPath: fmt.Sprintf("s3://%s", backupBucketName),
+			Database: "neo4j",
+		},
+	}
+	_, err = helmClient.Install(t, aggregateBackupReleaseName.String(), namespace, helmValues)
+	assert.NoError(t, err)
+
+	time.Sleep(2 * time.Minute)
+	cronjobs, err := Clientset.BatchV1().CronJobs(namespace).List(context.Background(),
+		metav1.ListOptions{
+			TypeMeta:      metav1.TypeMeta{},
+			LabelSelector: "app.kubernetes.io/component=aggregate-backup",
+		})
+	assert.NoError(t, err, "cannot retrieve aws aggregate backup cronjob")
+	assert.NotEqual(t, len(cronjobs.Items), 0)
+
+	pods, err = Clientset.CoreV1().Pods(namespace).List(context.Background(), metav1.ListOptions{})
+	assert.NoError(t, err, "error while retrieving pod list during aws backup operation")
+
+	found = false
+	for _, pod := range pods.Items {
+		if strings.Contains(pod.Name, "standalone-aggregate-aws") {
+			found = true
+			out, err := exec.Command("kubectl", "logs", pod.Name, "--namespace", namespace).CombinedOutput()
+			assert.NoError(t, err, "error while getting aws backup pod logs")
+			assert.NotNil(t, out, "aws backup logs cannot be retrieved")
+			assert.Contains(t, string(out), "Found backup chain with no diffs, no need to aggregate")
+			break
+		}
+	}
+	assert.Equal(t, true, found, "no aggregate backup pod found")
+	err = deleteAWSBucket(os.Getenv("AWS_ACCESS_KEY_ID"), os.Getenv("AWS_SECRET_ACCESS_KEY"), "us-east-1", backupBucketName)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -1150,5 +1205,88 @@ func deleteGCPServiceAccount(gcpServiceAccountName string) error {
 	if err != nil {
 		return fmt.Errorf("error seen while trying to add iam policy binding \n Here's why err := %s ", err)
 	}
+	return nil
+}
+
+func createAWSBucket(accessKey string, secretKey string, region string, bucketName string) error {
+	// Create a custom credentials provider
+	credProvider := credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")
+
+	// Load the AWS configuration with the custom credentials provider
+	cfg, err := config.LoadDefaultConfig(context.TODO(),
+		config.WithRegion(region),
+		config.WithCredentialsProvider(credProvider),
+	)
+	if err != nil {
+		log.Printf("Error loading AWS config: %v\n", err)
+		return err
+	}
+
+	// Create an S3 client
+	client := s3.NewFromConfig(cfg)
+
+	// Create the bucket
+	_, err = client.CreateBucket(context.TODO(), &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+
+	if err != nil {
+		log.Printf("Error creating bucket: %v\n", err)
+		return err
+	}
+	log.Printf("AWS bucket %s created", bucketName)
+	return nil
+}
+
+func deleteAWSBucket(accessKey string, secretKey string, region string, bucketName string) error {
+	credProvider := credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")
+
+	// Load the AWS configuration with the custom credentials provider
+	cfg, err := config.LoadDefaultConfig(context.TODO(),
+		config.WithRegion(region),
+		config.WithCredentialsProvider(credProvider),
+	)
+	if err != nil {
+		log.Printf("Error loading AWS config: %v\n", err)
+		return err
+	}
+
+	// Create an S3 client
+	client := s3.NewFromConfig(cfg)
+
+	paginator := s3.NewListObjectsV2Paginator(client, &s3.ListObjectsV2Input{
+		Bucket: &bucketName,
+	})
+
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(context.TODO())
+		if err != nil {
+			return fmt.Errorf("failed to list objects: %v", err)
+		}
+
+		var objectIds []types.ObjectIdentifier
+		for _, object := range page.Contents {
+			objectIds = append(objectIds, types.ObjectIdentifier{Key: object.Key})
+		}
+
+		_, err = client.DeleteObjects(context.TODO(), &s3.DeleteObjectsInput{
+			Bucket: &bucketName,
+			Delete: &types.Delete{Objects: objectIds},
+		})
+		if err != nil {
+			return fmt.Errorf("failed to delete objects: %v", err)
+		}
+	}
+
+	// Delete the bucket
+	_, err = client.DeleteBucket(context.TODO(), &s3.DeleteBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+
+	if err != nil {
+		log.Printf("Error deleting bucket: %v\n", err)
+		return err
+	}
+	log.Printf("AWS bucket %s deleted", bucketName)
 	return nil
 }

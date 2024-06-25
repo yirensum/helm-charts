@@ -14,8 +14,24 @@ import (
 
 func awsOperations() {
 
-	awsClient, err := aws.NewAwsClient(os.Getenv("CREDENTIAL_PATH"))
+	credentialPath := os.Getenv("CREDENTIAL_PATH")
+	awsClient, err := aws.NewAwsClient(credentialPath)
 	handleError(err)
+
+	if aggregateEnabled := os.Getenv("AGGREGATE_BACKUP_ENABLED"); aggregateEnabled == "true" {
+
+		log.Println("credential path", credentialPath)
+		//service account is NOT used hence env variables need to be set for aggregate backup operation
+		if credentialPath != "/credentials/" {
+			log.Println("generating env variables from creds")
+			err = awsClient.GenerateEnvVariablesFromCredentials()
+			handleError(err)
+		}
+
+		err = aggregateBackupOperations()
+		handleError(err)
+		return
+	}
 
 	bucketName := os.Getenv("BUCKET_NAME")
 	err = awsClient.CheckBucketAccess(bucketName)
@@ -83,6 +99,13 @@ func azureOperations() {
 }
 
 func onPrem() {
+
+	if aggregateEnabled := os.Getenv("AGGREGATE_BACKUP_ENABLED"); aggregateEnabled == "true" {
+		err := aggregateBackupOperations()
+		handleError(err)
+		return
+	}
+
 	backupFileNames, consistencyCheckReports, err := backupOperations()
 	handleError(err)
 
@@ -91,6 +114,8 @@ func onPrem() {
 
 }
 
+// backupOperations returns backupFileNames , consistencyCheckReports and error
+// performs aggregate backup is aggregate backup is enabled
 func backupOperations() ([]string, []string, error) {
 
 	address, err := generateAddress()
@@ -121,16 +146,19 @@ func backupOperations() ([]string, []string, error) {
 			}
 		}
 	}
-
 	return backupFileNames, consistencyCheckReports, nil
 }
 
-// startupOperations includes the following
-func startupOperations() {
-	dir, err := os.Getwd()
-	handleError(err)
-	log.Printf("printing current directory %s", dir)
+// aggregateBackupOperations perform aggregate backup
+func aggregateBackupOperations() error {
+	err := neo4jAdmin.PerformAggregateBackup()
+	if err != nil {
+		return err
+	}
+	return nil
+}
 
+func startupOperations() {
 	address, err := generateAddress()
 	handleError(err)
 
