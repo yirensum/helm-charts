@@ -20,10 +20,8 @@ func awsOperations() {
 
 	if aggregateEnabled := os.Getenv("AGGREGATE_BACKUP_ENABLED"); aggregateEnabled == "true" {
 
-		log.Println("credential path", credentialPath)
 		//service account is NOT used hence env variables need to be set for aggregate backup operation
 		if credentialPath != "/credentials/" {
-			log.Println("generating env variables from creds")
 			err = awsClient.GenerateEnvVariablesFromCredentials()
 			handleError(err)
 		}

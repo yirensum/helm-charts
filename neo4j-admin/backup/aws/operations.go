@@ -142,7 +142,6 @@ func (a *awsClient) GenerateEnvVariablesFromCredentials() error {
 	if err != nil {
 		return err
 	}
-	log.Printf("creds %v", creds)
 	err = os.Setenv("AWS_ACCESS_KEY_ID", creds.AccessKeyID)
 	if err != nil {
 		return err
@@ -155,7 +154,6 @@ func (a *awsClient) GenerateEnvVariablesFromCredentials() error {
 	if err != nil {
 		return err
 	}
-	log.Println("aws env variables", os.Getenv("AWS_REGION"), os.Getenv("AWS_SECRET_ACCESS_KEY"), os.Getenv("AWS_ACCESS_KEY_ID"))
 	return nil
 }
 
