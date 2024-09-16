@@ -126,6 +126,7 @@ data:
   dbms.routing.default_router: "SERVER"
   dbms.routing.client_side.enforce_for_domains: "*.{{ .Values.clusterDomain }}"
   dbms.routing.enabled: "true"
+  dbms.cluster.discovery.version: "V1_ONLY"
   {{- end }}
 
   {{- if $clusterEnabled }}
